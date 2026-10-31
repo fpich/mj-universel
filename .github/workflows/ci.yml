@@ -1,0 +1,43 @@
+name: CI — Rust, tests et intégrité
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Environnement de compilation Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libwayland-dev libxkbcommon-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libxinerama-dev libgl1-mesa-dev
+      - name: Rust stable
+        run: |
+          rustup update stable
+          rustup default stable
+      - name: Intégrité des sources livrées
+        run: sha256sum --check SHA256SUMS.txt
+      - name: Vérification Rust
+        run: cargo check --all-targets
+      - name: Tests unitaires de la bibliothèque
+        run: cargo test --lib
+      - name: Tests complets du projet
+        run: cargo test
+      - name: Schémas SQLite
+        run: |
+          python3 - <<'PYSQL'
+          import sqlite3
+          from pathlib import Path
+          for filename, version in [('schema/l1.sql', 11), ('schema/l2.sql', 27)]:
+              database = sqlite3.connect(':memory:')
+              database.executescript(Path(filename).read_text(encoding='utf-8'))
+              assert database.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+              assert database.execute('PRAGMA user_version').fetchone()[0] == version
+              database.close()
+              print(f'{filename}: SQLite OK (schema {version})')
+          PYSQL
